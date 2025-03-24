@@ -1,0 +1,77 @@
+services:
+
+    zookeeper:
+      image: confluentinc/cp-zookeeper:7.5.0
+      container_name: zookeeper
+      environment:
+        ZOOKEEPER_CLIENT_PORT: 2181
+      ports:
+        - "2181:2181"
+
+    kafka:
+      image: confluentinc/cp-kafka:7.5.0
+      container_name: kafka
+      ports:
+        - "9092:9092"
+      environment:
+        KAFKA_BROKER_ID: 1
+        KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+        KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+        KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      depends_on:
+        - zookeeper
+      healthcheck:
+        test: [ "CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list || exit 1" ]
+        interval: 5s
+        timeout: 10s
+        retries: 10
+
+    redis:
+      image: redis:7
+      container_name: fsm_redis
+      ports:
+        - "6379:6379"
+      restart: unless-stopped
+
+    dispatcher:
+      build:
+        context: ../
+        dockerfile: examples/dispatcher/Containerfile
+      container_name: fsm_dispatcher
+      environment:
+        - KAFKA_BROKER=kafka:9092
+      ports:
+        - "8080:8080"
+      depends_on:
+        kafka:
+          condition: service_healthy
+
+    scheduler-1:
+      build:
+        context: ../
+        dockerfile: examples/scheduler/Containerfile
+      container_name: fsm_scheduler_1
+      environment:
+        - SCHEDULER_GROUP=group-a
+        - KAFKA_BROKER=kafka:9092
+        - REDIS_ADDR=redis:6379
+      depends_on:
+        kafka:
+          condition: service_healthy
+        redis:
+          condition: service_started
+
+    scheduler-2:
+      build:
+        context: ../
+        dockerfile: examples/scheduler/Containerfile
+      container_name: fsm_scheduler_2
+      environment:
+        - SCHEDULER_GROUP=group-b
+        - KAFKA_BROKER=kafka:9092
+        - REDIS_ADDR=redis:6379
+      depends_on:
+        kafka:
+          condition: service_healthy
+        redis:
+          condition: service_started
